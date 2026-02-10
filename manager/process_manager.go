@@ -271,15 +271,47 @@ func (pm *ProcessManager) StopInstance(instanceID string) error {
 		return nil
 	}
 
+	// 尝试终止进程
+	var err error
+	
+	// 如果是内部启动的进程，且有 Cmd 对象
 	if inst.Cmd != nil && inst.Cmd.Process != nil {
-		// Kill(-pid) 发送信号给进程组，确保子进程也被终止
-		if err := syscall.Kill(-inst.PID, syscall.SIGKILL); err != nil {
-			// 如果进程组杀失败（可能因为权限或进程已不存在），尝试普通 Kill
-			return inst.Cmd.Process.Kill()
+		// 优先尝试杀进程组 (-PID)
+		if pgErr := syscall.Kill(-inst.PID, syscall.SIGKILL); pgErr != nil {
+			// 如果进程组杀失败，尝试普通 Kill
+			err = inst.Cmd.Process.Kill()
 		}
-		return nil
+	} else {
+		// 外部进程或丢失 Cmd 对象的进程，尝试通过 PID 查找并终止
+		if proc, findErr := os.FindProcess(inst.PID); findErr == nil {
+			err = proc.Kill()
+		} else {
+			err = findErr
+		}
 	}
-	return nil
+
+	if err != nil {
+		// 检查是否是因为进程已经不存在了
+		if strings.Contains(err.Error(), "process already finished") || 
+		   strings.Contains(err.Error(), "no such process") {
+			// 进程已结束，视为成功
+			err = nil
+		}
+	}
+
+	// 无论是否报错，只要我们尝试了终止，就应该更新状态或者等待 monitorProcess 更新状态
+	// 对于外部进程，monitorProcess 不会运行，所以我们需要手动更新状态
+	if inst.Source == "external" {
+		pm.mu.Lock()
+		inst.Status = models.StatusStopped
+		inst.ExitCode = 0 // 假设正常退出
+		if err != nil {
+			inst.Error = err.Error()
+		}
+		pm.mu.Unlock()
+	}
+
+	return err
 }
 
 func (pm *ProcessManager) GetAllStatus() []models.AppStatusSummary {

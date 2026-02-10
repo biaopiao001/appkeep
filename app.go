@@ -109,7 +109,9 @@ func (a *App) StopAllApps() {
 	for _, summary := range summaries {
 		for _, inst := range summary.Instances {
 			if inst.Status == models.StatusRunning {
-				a.manager.StopInstance(inst.InstanceID)
+				if err := a.manager.StopInstance(inst.InstanceID); err != nil {
+					runtime.LogErrorf(a.ctx, "Failed to stop instance %s (PID %d): %v", inst.InstanceID, inst.PID, err)
+				}
 			}
 		}
 	}

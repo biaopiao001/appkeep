@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { EventsOn, EventsOff } from "../wailsjs/runtime/runtime";
 import { GetInstanceLogs, ClearInstanceLogs } from "../wailsjs/go/main/App";
+import Ansi from "ansi-to-react";
 
 function LogPanel({ instanceId, visible }) {
     const [logs, setLogs] = useState([]);
@@ -108,7 +109,9 @@ function LogPanel({ instanceId, visible }) {
                         <div className="log-empty">Waiting for output...</div>
                     ) : (
                         logs.map((line, i) => (
-                            <div key={i} className="log-line">{line}</div>
+                            <div key={i} className="log-line">
+                                <Ansi>{line}</Ansi>
+                            </div>
                         ))
                     )}
                     <div ref={logsEndRef} />
