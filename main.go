@@ -32,6 +32,11 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,
 		OnBeforeClose: func(ctx context.Context) (prevent bool) {
+			if !app.isQuitting {
+				runtime.WindowHide(ctx)
+				return true
+			}
+
 			// 检查是否有运行中的应用
 			summaries := app.GetAllStatus()
 			hasRunning := false
@@ -65,6 +70,7 @@ func main() {
 				case "保留运行并退出":
 					return false
 				case "取消":
+					app.isQuitting = false // Reset quitting state if cancelled
 					return true
 				}
 			}

@@ -4,14 +4,18 @@ import (
 	"context"
 	"appkeep/manager"
 	"appkeep/models"
-	"path/filepath"
 	"os"
+	"path/filepath"
+
+	"github.com/energye/systray"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
 type App struct {
-	ctx     context.Context
-	manager *manager.ProcessManager
+	ctx        context.Context
+	manager    *manager.ProcessManager
+	isQuitting bool
 }
 
 // NewApp creates a new App application struct
@@ -24,6 +28,9 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	
+	// Start systray
+	go systray.Run(a.onTrayReady, a.onTrayExit)
+
 	// 设置数据存储路径
 	home, _ := os.UserHomeDir()
 	configDir := filepath.Join(home, ".appkeep")
@@ -31,6 +38,29 @@ func (a *App) startup(ctx context.Context) {
 	dataFile := filepath.Join(configDir, "config.json")
 	
 	a.manager = manager.NewProcessManager(ctx, dataFile)
+}
+
+func (a *App) onTrayReady() {
+	systray.SetIcon(iconData)
+	systray.SetTitle("AppKeep")
+	systray.SetTooltip("AppKeep - 应用保活管理")
+
+	mShow := systray.AddMenuItem("显示主窗口", "Show Main Window")
+	mQuit := systray.AddMenuItem("退出", "Quit Application")
+
+	mShow.Click(func() {
+		runtime.WindowShow(a.ctx)
+	})
+
+	mQuit.Click(func() {
+		a.isQuitting = true
+		systray.Quit()
+		runtime.Quit(a.ctx)
+	})
+}
+
+func (a *App) onTrayExit() {
+	// Cleanup here
 }
 
 // GetConfigs 获取所有应用配置
