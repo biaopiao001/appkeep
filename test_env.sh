@@ -63,3 +63,6 @@ echo ""
 
 echo "=== 关键环境变量 ==="
 env | grep -E "^(PATH|HOME|USER|SHELL|LANG|NODE|NPM|PYTHON|JAVA)" | sort
+
+echo "=== 代理环境变量 ==="
+env | grep -i proxy

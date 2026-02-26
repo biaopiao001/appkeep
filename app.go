@@ -36,8 +36,9 @@ func (a *App) startup(ctx context.Context) {
 	configDir := filepath.Join(home, ".appkeep")
 	os.MkdirAll(configDir, 0755)
 	dataFile := filepath.Join(configDir, "config.json")
+	settingsFile := filepath.Join(configDir, "settings.json")
 	
-	a.manager = manager.NewProcessManager(ctx, dataFile)
+	a.manager = manager.NewProcessManager(ctx, dataFile, settingsFile)
 }
 
 func (a *App) onTrayReady() {
@@ -66,6 +67,16 @@ func (a *App) onTrayExit() {
 // GetConfigs 获取所有应用配置
 func (a *App) GetConfigs() []models.AppConfig {
 	return a.manager.GetConfigs()
+}
+
+// GetGlobalSettings 获取全局配置
+func (a *App) GetGlobalSettings() models.GlobalSettings {
+	return a.manager.GetGlobalSettings()
+}
+
+// SaveGlobalSettings 保存全局配置
+func (a *App) SaveGlobalSettings(settings models.GlobalSettings) {
+	a.manager.SaveGlobalSettings(settings)
 }
 
 // SaveConfig 保存或更新应用配置

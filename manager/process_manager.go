@@ -24,23 +24,27 @@ import (
 )
 
 type ProcessManager struct {
-	configs   map[string]models.AppConfig
-	instances map[string]*models.ProcessInstance
-	logBuffers map[string][]string  // 为每个实例缓存日志
-	mu        sync.RWMutex
-	dataFile  string
-	ctx       context.Context
+	configs      map[string]models.AppConfig
+	instances    map[string]*models.ProcessInstance
+	logBuffers   map[string][]string // 为每个实例缓存日志
+	settings     models.GlobalSettings
+	mu           sync.RWMutex
+	dataFile     string
+	settingsFile string
+	ctx          context.Context
 }
 
-func NewProcessManager(ctx context.Context, dataFile string) *ProcessManager {
+func NewProcessManager(ctx context.Context, dataFile string, settingsFile string) *ProcessManager {
 	pm := &ProcessManager{
-		configs:    make(map[string]models.AppConfig),
-		instances:  make(map[string]*models.ProcessInstance),
-		logBuffers: make(map[string][]string),
-		dataFile:   dataFile,
-		ctx:        ctx,
+		configs:      make(map[string]models.AppConfig),
+		instances:    make(map[string]*models.ProcessInstance),
+		logBuffers:   make(map[string][]string),
+		dataFile:     dataFile,
+		settingsFile: settingsFile,
+		ctx:          ctx,
 	}
 	pm.loadConfigs()
+	pm.loadSettings()
 	return pm
 }
 
@@ -57,6 +61,34 @@ func (pm *ProcessManager) saveConfigs() {
 	defer pm.mu.RUnlock()
 	data, _ := json.MarshalIndent(pm.configs, "", "  ")
 	os.WriteFile(pm.dataFile, data, 0644)
+}
+
+func (pm *ProcessManager) loadSettings() {
+	data, err := os.ReadFile(pm.settingsFile)
+	if err != nil {
+		return
+	}
+	json.Unmarshal(data, &pm.settings)
+}
+
+func (pm *ProcessManager) saveSettings() {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	data, _ := json.MarshalIndent(pm.settings, "", "  ")
+	os.WriteFile(pm.settingsFile, data, 0644)
+}
+
+func (pm *ProcessManager) GetGlobalSettings() models.GlobalSettings {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+	return pm.settings
+}
+
+func (pm *ProcessManager) SaveGlobalSettings(settings models.GlobalSettings) {
+	pm.mu.Lock()
+	pm.settings = settings
+	pm.mu.Unlock()
+	pm.saveSettings()
 }
 
 func (pm *ProcessManager) SaveConfig(cfg models.AppConfig) string {
@@ -159,6 +191,23 @@ func (pm *ProcessManager) StartApp(configID string) (string, error) {
 		for key, value := range cfg.Env {
 			envMap[key] = value
 		}
+	}
+	
+	// 设置代理环境变量
+	proxyUrl := cfg.Proxy
+	if proxyUrl == "" {
+		pm.mu.RLock()
+		proxyUrl = pm.settings.Proxy
+		pm.mu.RUnlock()
+	}
+	
+	if proxyUrl != "" {
+		envMap["HTTP_PROXY"] = proxyUrl
+		envMap["HTTPS_PROXY"] = proxyUrl
+		envMap["ALL_PROXY"] = proxyUrl
+		envMap["http_proxy"] = proxyUrl
+		envMap["https_proxy"] = proxyUrl
+		envMap["all_proxy"] = proxyUrl
 	}
 	
 	// 构建环境变量数组

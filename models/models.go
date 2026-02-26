@@ -21,6 +21,11 @@ type AppConfig struct {
 	AllowMulti   bool              `json:"allowMulti"`
 	Env          map[string]string `json:"env,omitempty"`          // 自定义环境变量
 	InheritEnv   bool              `json:"inheritEnv"`             // 是否继承主进程环境变量
+	Proxy        string            `json:"proxy,omitempty"`        // 代理配置 (例如: socks5://... 或 http://...)
+}
+
+type GlobalSettings struct {
+	Proxy string `json:"proxy,omitempty"` // 全局代理设置
 }
 
 type ProcessInstance struct {

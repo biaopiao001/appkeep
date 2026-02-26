@@ -1,6 +1,6 @@
 import {useState, useEffect} from 'react';
 import './App.css';
-import {GetConfigs, SaveConfig, DeleteConfig, StartApp, StopInstance, GetAllStatus, ClearStoppedInstances, ScanExternalProcesses} from "../wailsjs/go/main/App";
+import {GetConfigs, SaveConfig, DeleteConfig, StartApp, StopInstance, GetAllStatus, ClearStoppedInstances, ScanExternalProcesses, GetGlobalSettings, SaveGlobalSettings} from "../wailsjs/go/main/App";
 import LogPanel from "./LogPanel";
 
 function App() {
@@ -8,6 +8,7 @@ function App() {
     const [selectedConfigId, setSelectedConfigId] = useState(null);
     const [selectedInstanceId, setSelectedInstanceId] = useState(null); // New state for logs
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [editingApp, setEditingApp] = useState(null);
 
     const refreshData = () => {
@@ -79,6 +80,7 @@ function App() {
                 onSelect={setSelectedConfigId} 
                 onAdd={() => { setEditingApp(null); setIsModalOpen(true); }}
                 onScan={handleScan}
+                onSettings={() => setIsSettingsOpen(true)}
             />
             
             <main className="main-content">
@@ -106,16 +108,23 @@ function App() {
                     onClose={() => { setIsModalOpen(false); setEditingApp(null); }} 
                 />
             )}
+
+            {isSettingsOpen && (
+                <SettingsModal 
+                    onClose={() => setIsSettingsOpen(false)} 
+                />
+            )}
         </div>
     );
 }
 
-function Sidebar({apps, selectedId, onSelect, onAdd, onScan}) {
+function Sidebar({apps, selectedId, onSelect, onAdd, onScan, onSettings}) {
     return (
         <aside className="sidebar">
             <div className="sidebar-header">
                 <h2>AppKeep</h2>
                 <div className="actions">
+                    <button className="icon-only-btn" onClick={onSettings} title="全局设置">⚙️</button>
                     <button className="icon-only-btn" onClick={onScan} title="扫描外部进程">🔄</button>
                     <button className="add-btn" onClick={onAdd} title="添加应用">+</button>
                 </div>
@@ -265,6 +274,7 @@ function ConfigModal({app, onSave, onClose}) {
     const [name, setName] = useState(app?.name || "");
     const [execPath, setExecPath] = useState(app?.execPath || "");
     const [args, setArgs] = useState(app?.args?.join(" ") || "");
+    const [proxy, setProxy] = useState(app?.proxy || "");
     const [allowMulti, setAllowMulti] = useState(app?.allowMulti || false);
     const [inheritEnv, setInheritEnv] = useState(app?.inheritEnv !== undefined ? app.inheritEnv : true); // 默认继承
     const [envVars, setEnvVars] = useState(() => {
@@ -304,6 +314,7 @@ function ConfigModal({app, onSave, onClose}) {
             name,
             execPath,
             args: args.split(" ").filter(a => a !== ""),
+            proxy: proxy.trim(),
             allowMulti,
             inheritEnv,
             env: Object.keys(env).length > 0 ? env : undefined
@@ -333,6 +344,11 @@ function ConfigModal({app, onSave, onClose}) {
                             <label>启动参数</label>
                             <input value={args} onChange={e => setArgs(e.target.value)} placeholder="-c /etc/nginx.conf" />
                             <small className="form-hint">参数之间用空格分隔</small>
+                        </div>
+                        <div className="form-group">
+                            <label>应用代理</label>
+                            <input value={proxy} onChange={e => setProxy(e.target.value)} placeholder="例如: socks5://127.0.0.1:1080 (留空使用全局代理)" />
+                            <small className="form-hint">该代理会以环境变量形式传入。若不填且配置了全局代理，将使用全局代理。</small>
                         </div>
                         <div className="form-group checkbox-group">
                             <input type="checkbox" checked={allowMulti} onChange={e => setAllowMulti(e.target.checked)} id="multi" />
@@ -380,6 +396,56 @@ function ConfigModal({app, onSave, onClose}) {
                     <div className="modal-footer">
                         <button type="button" className="secondary large" onClick={onClose}>取消</button>
                         <button type="submit" className="primary large">保存配置</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+function SettingsModal({onClose}) {
+    const [proxy, setProxy] = useState("");
+
+    useEffect(() => {
+        GetGlobalSettings().then(settings => {
+            if (settings && settings.proxy) {
+                setProxy(settings.proxy);
+            }
+        });
+    }, []);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        SaveGlobalSettings({
+            proxy: proxy.trim()
+        }).then(() => {
+            onClose();
+        });
+    };
+
+    return (
+        <div className="modal-overlay fadeIn">
+            <div className="modal-content scaleIn" style={{maxWidth: '400px'}}>
+                <div className="modal-header">
+                    <h2>全局设置</h2>
+                    <button className="close-btn" onClick={onClose} title="关闭">×</button>
+                </div>
+                <form onSubmit={handleSubmit}>
+                    <div className="modal-body">
+                        <div className="form-group">
+                            <label>全局代理</label>
+                            <input 
+                                value={proxy} 
+                                onChange={e => setProxy(e.target.value)} 
+                                placeholder="例如: http://127.0.0.1:7890" 
+                                autoFocus 
+                            />
+                            <small className="form-hint">子应用未配置代理时，将默认使用此设置。</small>
+                        </div>
+                    </div>
+                    <div className="modal-footer">
+                        <button type="button" className="secondary large" onClick={onClose}>取消</button>
+                        <button type="submit" className="primary large">保存全局设置</button>
                     </div>
                 </form>
             </div>
