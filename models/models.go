@@ -22,10 +22,13 @@ type AppConfig struct {
 	Env          map[string]string `json:"env,omitempty"`          // 自定义环境变量
 	InheritEnv   bool              `json:"inheritEnv"`             // 是否继承主进程环境变量
 	Proxy        string            `json:"proxy,omitempty"`        // 代理配置 (例如: socks5://... 或 http://...)
+	Port         int               `json:"port,omitempty"`         // 应用监控端口
+	WorkDir      string            `json:"workDir,omitempty"`      // 工作存放目录
 }
 
 type GlobalSettings struct {
-	Proxy string `json:"proxy,omitempty"` // 全局代理设置
+	Proxy   string `json:"proxy,omitempty"`   // 全局代理设置
+	ApiPort int    `json:"apiPort,omitempty"` // API 服务端口
 }
 
 type ProcessInstance struct {
@@ -43,4 +46,5 @@ type ProcessInstance struct {
 type AppStatusSummary struct {
 	Config    AppConfig         `json:"config"`
 	Instances []ProcessInstance `json:"instances"`
+	Status    InstanceStatus    `json:"status"` // "running", "stopped", etc.
 }

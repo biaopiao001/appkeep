@@ -51,28 +51,8 @@ func main() {
 			}
 
 			if hasRunning {
-				dialog, err := runtime.MessageDialog(ctx, runtime.MessageDialogOptions{
-					Type:          runtime.QuestionDialog,
-					Title:         "退出确认",
-					Message:       "还有应用在后台运行，是否要在退出前关闭它们？",
-					Buttons:       []string{"关闭所有并退出", "保留运行并退出", "取消"},
-					DefaultButton: "取消",
-					CancelButton:  "取消",
-				})
-				if err != nil {
-					return false
-				}
-
-				switch dialog {
-				case "关闭所有并退出":
-					app.StopAllApps()
-					return false
-				case "保留运行并退出":
-					return false
-				case "取消":
-					app.isQuitting = false // Reset quitting state if cancelled
-					return true
-				}
+				// 用户要求退出时默认必须把子进程都清理了，不再提示
+				app.StopAllApps()
 			}
 			return false
 		},

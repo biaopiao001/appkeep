@@ -24,14 +24,15 @@ import (
 )
 
 type ProcessManager struct {
-	configs      map[string]models.AppConfig
-	instances    map[string]*models.ProcessInstance
-	logBuffers   map[string][]string // 为每个实例缓存日志
-	settings     models.GlobalSettings
-	mu           sync.RWMutex
-	dataFile     string
-	settingsFile string
-	ctx          context.Context
+	configs           map[string]models.AppConfig
+	instances         map[string]*models.ProcessInstance
+	logBuffers        map[string][]string // 为每个实例缓存日志
+	settings          models.GlobalSettings
+	mu                sync.RWMutex
+	dataFile          string
+	settingsFile      string
+	ctx               context.Context
+	WailsContextReady bool // 是否准备好可以直接触发 Wails Event
 }
 
 func NewProcessManager(ctx context.Context, dataFile string, settingsFile string) *ProcessManager {
@@ -105,7 +106,29 @@ func (pm *ProcessManager) SaveConfig(cfg models.AppConfig) string {
 func (pm *ProcessManager) DeleteConfig(id string) {
 	pm.mu.Lock()
 	delete(pm.configs, id)
+	
+	var toStop []string
+	for _, inst := range pm.instances {
+		if inst.ConfigID == id && inst.Status == models.StatusRunning {
+			toStop = append(toStop, inst.InstanceID)
+		}
+	}
 	pm.mu.Unlock()
+
+	// 停止相关的进程
+	for _, instID := range toStop {
+		pm.StopInstance(instID)
+	}
+
+	// 停止后从实例缓存中清除所有该配置的实例
+	pm.mu.Lock()
+	for _, inst := range pm.instances {
+		if inst.ConfigID == id {
+			delete(pm.instances, inst.InstanceID)
+		}
+	}
+	pm.mu.Unlock()
+
 	pm.saveConfigs()
 }
 
@@ -140,6 +163,11 @@ func (pm *ProcessManager) StartApp(configID string) (string, error) {
 
 	cmd := exec.Command(cfg.ExecPath, cfg.Args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	
+	if cfg.WorkDir != "" {
+		cmd.Dir = cfg.WorkDir
+	}
+	fmt.Printf("[DEBUG StartApp] cfg.WorkDir: '%s', cmd.Dir: '%s'\n", cfg.WorkDir, cmd.Dir)
 	
 	// 根据配置决定是否继承环境变量
 	var envMap map[string]string
@@ -282,7 +310,9 @@ func (pm *ProcessManager) streamLog(instanceID string, reader io.Reader, source 
 		pm.mu.Unlock()
 		
 		// 发送日志事件：log:<instanceID> -> "line content"
-		runtime.EventsEmit(pm.ctx, "log:"+instanceID, line)
+		if pm.ctx != nil && pm.WailsContextReady {
+			runtime.EventsEmit(pm.ctx, "log:"+instanceID, line)
+		}
 	}
 }
 
@@ -320,24 +350,8 @@ func (pm *ProcessManager) StopInstance(instanceID string) error {
 		return nil
 	}
 
-	// 尝试终止进程
-	var err error
-	
-	// 如果是内部启动的进程，且有 Cmd 对象
-	if inst.Cmd != nil && inst.Cmd.Process != nil {
-		// 优先尝试杀进程组 (-PID)
-		if pgErr := syscall.Kill(-inst.PID, syscall.SIGKILL); pgErr != nil {
-			// 如果进程组杀失败，尝试普通 Kill
-			err = inst.Cmd.Process.Kill()
-		}
-	} else {
-		// 外部进程或丢失 Cmd 对象的进程，尝试通过 PID 查找并终止
-		if proc, findErr := os.FindProcess(inst.PID); findErr == nil {
-			err = proc.Kill()
-		} else {
-			err = findErr
-		}
-	}
+	// 统一调用自定义杀进程树方法，无论是由 AppKeep 启动还是外部进程
+	err := pm.killProcessTree(inst.PID)
 
 	if err != nil {
 		// 检查是否是因为进程已经不存在了
@@ -363,6 +377,34 @@ func (pm *ProcessManager) StopInstance(instanceID string) error {
 	return err
 }
 
+// killProcessTree 杀死进程及其所有子进程
+func (pm *ProcessManager) killProcessTree(pid int) error {
+	if pid <= 0 {
+		return fmt.Errorf("invalid pid: %d", pid)
+	}
+
+	// 1. 获取所有子进程 (pgrep -P)
+	cmd := exec.Command("pgrep", "-P", strconv.Itoa(pid))
+	output, _ := cmd.Output()
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	
+	// 2. 递归关闭子进程
+	for _, line := range lines {
+		if childPid, err := strconv.Atoi(line); err == nil && childPid > 0 {
+			pm.killProcessTree(childPid)
+		}
+	}
+
+	// 3. 最后尝试杀掉当前进程组或者当前进程自身
+	err := syscall.Kill(-pid, syscall.SIGKILL) // 杀组
+	if err != nil {
+		// 回退只杀单个目标
+		syscall.Kill(pid, syscall.SIGKILL)
+	}
+	
+	return nil
+}
+
 func (pm *ProcessManager) GetAllStatus() []models.AppStatusSummary {
 	// 检查已知实例的状态
 	pm.CheckExternalStatus()
@@ -378,9 +420,19 @@ func (pm *ProcessManager) GetAllStatus() []models.AppStatusSummary {
 
 	var res []models.AppStatusSummary
 	for _, cfg := range pm.configs {
+		instances := instanceMap[cfg.ID]
+		appStatus := models.StatusStopped
+		for _, inst := range instances {
+			if inst.Status == models.StatusRunning {
+				appStatus = models.StatusRunning
+				break
+			}
+		}
+
 		res = append(res, models.AppStatusSummary{
 			Config:    cfg,
-			Instances: instanceMap[cfg.ID],
+			Instances: instances,
+			Status:    appStatus,
 		})
 	}
 	return res
@@ -411,6 +463,55 @@ func (pm *ProcessManager) ScanExternalProcesses() {
 }
 
 func (pm *ProcessManager) scanForConfig(cfg models.AppConfig) {
+	pm.mu.Lock()
+	knownPIDs := make(map[int]bool)
+	for _, inst := range pm.instances {
+		if inst.ConfigID == cfg.ID && inst.Status == models.StatusRunning {
+			knownPIDs[inst.PID] = true
+		}
+	}
+	pm.mu.Unlock()
+
+	// 1. 优先通过 Port 扫描外部进程
+	if cfg.Port > 0 {
+		cmd := exec.Command("ss", "-lptn", fmt.Sprintf("sport = :%d", cfg.Port))
+		output, err := cmd.Output()
+		if err == nil {
+			// output 举例: LISTEN 0 1 0.0.0.0:8899 0.0.0.0:* users:(("nc",pid=14577,fd=3))
+			// 提取 pid=\d+ 
+			outStr := string(output)
+			pidIndex := strings.Index(outStr, "pid=")
+			if pidIndex != -1 {
+				pidStr := outStr[pidIndex+4:]
+				commaIndex := strings.Index(pidStr, ",")
+				if commaIndex != -1 {
+					pidStr = pidStr[:commaIndex]
+				}
+				pid, err := strconv.Atoi(pidStr)
+				
+				if err == nil && pid > 0 && !knownPIDs[pid] {
+					fmt.Printf("Detected external process for %s via Port %d: PID %d\n", cfg.Name, cfg.Port, pid)
+					
+					pm.mu.Lock()
+					inst := &models.ProcessInstance{
+						InstanceID: uuid.New().String(),
+						PID:        pid,
+						ConfigID:   cfg.ID,
+						Status:     models.StatusRunning,
+						Source:     "external",
+						StartTime:  time.Now(),
+					}
+					pm.instances[inst.InstanceID] = inst
+					pm.mu.Unlock()
+					return
+				}
+			}
+		}
+		// 如果配置了 Port，无论是否找到对应进程，都不再回退到模糊的名称扫描
+		return
+	}
+
+	// 2. 如果没有配置端口，退回到按执行路径扫描
 	execName := filepath.Base(cfg.ExecPath)
 	if execName == "" || execName == "." {
 		return
@@ -422,13 +523,9 @@ func (pm *ProcessManager) scanForConfig(cfg models.AppConfig) {
 	}
 	absConfigPath, _ := filepath.Abs(targetPath)
 	
-	// 使用 pgrep -f -a 查找匹配命令行的进程
-	// -f: 匹配完整命令行
-	// -a: 输出 PID 和 命令行
 	cmd := exec.Command("pgrep", "-f", "-a", execName)
 	output, err := cmd.Output()
 	if err != nil {
-		// 尝试回退到精确名称匹配
 		cmd = exec.Command("pgrep", "-x", "-a", execName)
 		output, err = cmd.Output()
 		if err != nil {
@@ -437,15 +534,6 @@ func (pm *ProcessManager) scanForConfig(cfg models.AppConfig) {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	
-	pm.mu.Lock()
-	knownPIDs := make(map[int]bool)
-	for _, inst := range pm.instances {
-		if inst.ConfigID == cfg.ID && inst.Status == models.StatusRunning {
-			knownPIDs[inst.PID] = true
-		}
-	}
-	pm.mu.Unlock()
 
 	for _, line := range lines {
 		parts := strings.SplitN(line, " ", 2)
@@ -454,11 +542,7 @@ func (pm *ProcessManager) scanForConfig(cfg models.AppConfig) {
 		}
 		
 		pid, err := strconv.Atoi(parts[0])
-		if err != nil {
-			continue
-		}
-
-		if knownPIDs[pid] {
+		if err != nil || knownPIDs[pid] {
 			continue
 		}
 

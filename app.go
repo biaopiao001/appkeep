@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"appkeep/api"
 	"appkeep/manager"
 	"appkeep/models"
 	"os"
@@ -39,6 +40,15 @@ func (a *App) startup(ctx context.Context) {
 	settingsFile := filepath.Join(configDir, "settings.json")
 	
 	a.manager = manager.NewProcessManager(ctx, dataFile, settingsFile)
+	a.manager.WailsContextReady = true
+
+	// 获取配置中的ApiPort并启动服务
+	globalSettings := a.manager.GetGlobalSettings()
+	go func() {
+		if err := api.StartServer(a, globalSettings.ApiPort); err != nil {
+			runtime.LogErrorf(a.ctx, "Failed to start API server: %v", err)
+		}
+	}()
 }
 
 func (a *App) onTrayReady() {

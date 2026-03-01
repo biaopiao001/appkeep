@@ -273,8 +273,10 @@ function InstanceCard({inst, onStop, onClick, isSelected}) {
 function ConfigModal({app, onSave, onClose}) {
     const [name, setName] = useState(app?.name || "");
     const [execPath, setExecPath] = useState(app?.execPath || "");
+    const [workDir, setWorkDir] = useState(app?.workDir || "");
     const [args, setArgs] = useState(app?.args?.join(" ") || "");
     const [proxy, setProxy] = useState(app?.proxy || "");
+    const [port, setPort] = useState(app?.port || "");
     const [allowMulti, setAllowMulti] = useState(app?.allowMulti || false);
     const [inheritEnv, setInheritEnv] = useState(app?.inheritEnv !== undefined ? app.inheritEnv : true); // 默认继承
     const [envVars, setEnvVars] = useState(() => {
@@ -313,8 +315,10 @@ function ConfigModal({app, onSave, onClose}) {
             id: app?.id || "",
             name,
             execPath,
+            workDir: workDir.trim(),
             args: args.split(" ").filter(a => a !== ""),
             proxy: proxy.trim(),
+            port: port ? parseInt(port, 10) : 0,
             allowMulti,
             inheritEnv,
             env: Object.keys(env).length > 0 ? env : undefined
@@ -338,12 +342,22 @@ function ConfigModal({app, onSave, onClose}) {
                         <div className="form-group">
                             <label>执行路径</label>
                             <input value={execPath} onChange={e => setExecPath(e.target.value)} placeholder="/usr/bin/nginx" required />
-                            <small className="form-hint">可执行文件的绝对路径</small>
+                            <small className="form-hint">可执行文件的绝对路径。如果不配置端口，则通过路径匹配外部进程。</small>
+                        </div>
+                        <div className="form-group">
+                            <label>工作目录 (WorkDir)</label>
+                            <input value={workDir} onChange={e => setWorkDir(e.target.value)} placeholder="例如：/data/my-project (可选)" />
+                            <small className="form-hint">程序启动时所在的目录。留空将使用 AppKeep 当前路径或系统默认。</small>
                         </div>
                         <div className="form-group">
                             <label>启动参数</label>
                             <input value={args} onChange={e => setArgs(e.target.value)} placeholder="-c /etc/nginx.conf" />
                             <small className="form-hint">参数之间用空格分隔</small>
+                        </div>
+                        <div className="form-group">
+                            <label>应用监控端口</label>
+                            <input type="number" min="1" max="65535" value={port} onChange={e => setPort(e.target.value)} placeholder="例如：8080 (可选)" />
+                            <small className="form-hint">如果配置了端口，『扫描外部进程』将根据占用该端口的进程来自动挂载。</small>
                         </div>
                         <div className="form-group">
                             <label>应用代理</label>
