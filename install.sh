@@ -8,9 +8,20 @@ REAL_USER=${SUDO_USER:-$USER}
 USER_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 
 # 确保在 sudo 运行下也能找到用户的 go, wails, npm
-USER_PATH=$(sudo -u "$REAL_USER" bash -c 'echo $PATH')
-export GOPATH=$(sudo -u "$REAL_USER" go env GOPATH 2>/dev/null || echo "$USER_HOME/go")
-export PATH="$USER_PATH:/usr/local/go/bin:$GOPATH/bin:$USER_HOME/.local/bin:$PATH"
+USER_PATH=$(sudo -u "$REAL_USER" env "HOME=$USER_HOME" bash -lc 'source "$HOME/.nvm/nvm.sh" >/dev/null 2>&1 || true; printf "%s" "$PATH"')
+NPM_BIN_DIR=$(sudo -u "$REAL_USER" env "HOME=$USER_HOME" bash -lc 'source "$HOME/.nvm/nvm.sh" >/dev/null 2>&1 || true; if command -v npm >/dev/null 2>&1; then dirname "$(command -v npm)"; fi')
+if [ -z "$NPM_BIN_DIR" ] && [ -d "$USER_HOME/.nvm/versions/node" ]; then
+    NPM_BIN_DIR=$(find "$USER_HOME/.nvm/versions/node" -mindepth 2 -maxdepth 2 -type d -name bin -print 2>/dev/null | sort -V | tail -n 1)
+fi
+export GOPATH=$(sudo -u "$REAL_USER" env "HOME=$USER_HOME" bash -lc 'go env GOPATH 2>/dev/null || printf "%s/go" "$HOME"')
+export PATH="$NPM_BIN_DIR:$USER_PATH:/usr/local/go/bin:$GOPATH/bin:$USER_HOME/.local/bin:$PATH"
+
+require_user_cmd() {
+    if ! sudo -u "$REAL_USER" env "HOME=$USER_HOME" "PATH=$PATH" "GOPATH=$GOPATH" bash -c 'command -v "$1"' _ "$1" >/dev/null 2>&1; then
+        echo "错误: 未找到 $1，请检查 $REAL_USER 用户的构建环境。"
+        exit 1
+    fi
+}
 
 APP_NAME="appkeep"
 DISPLAY_NAME="AppKeep"
@@ -32,13 +43,27 @@ sudo -u "$REAL_USER" mkdir -p "$DESKTOP_DIR"
 
 # 4. 编译项目 (必须以原始用户身份运行，以避免 npm/wails 环境冲突)
 echo "📂 正在编译应用 (使用 -tags webkit2_41)..."
-sudo -u "$REAL_USER" env "PATH=$PATH" "GOPATH=$GOPATH" wails build -tags webkit2_41
+require_user_cmd wails
+require_user_cmd node
+require_user_cmd npm
+sudo -u "$REAL_USER" env "HOME=$USER_HOME" "PATH=$PATH" "GOPATH=$GOPATH" wails build -tags webkit2_41
 
 # 5. 部署文件
 echo "📦 部署二进制文件与图标..."
-cp "build/bin/$APP_NAME" "$INSTALL_DIR/"
-chown "$REAL_USER:$REAL_USER" "$INSTALL_DIR/$APP_NAME"
-chmod +x "$INSTALL_DIR/$APP_NAME"
+TMP_BIN=""
+cleanup_tmp_bin() {
+    if [ -n "$TMP_BIN" ] && [ -e "$TMP_BIN" ]; then
+        rm -f "$TMP_BIN"
+    fi
+}
+trap cleanup_tmp_bin EXIT
+TMP_BIN="$(mktemp "$INSTALL_DIR/$APP_NAME.tmp.XXXXXX")"
+cp "build/bin/$APP_NAME" "$TMP_BIN"
+chown "$REAL_USER:$REAL_USER" "$TMP_BIN"
+chmod +x "$TMP_BIN"
+mv -f "$TMP_BIN" "$INSTALL_DIR/$APP_NAME"
+TMP_BIN=""
+trap - EXIT
 
 if [ -f "$ICON_SOURCE" ]; then
     cp "$ICON_SOURCE" "$ICON_DIR/$APP_NAME.png"

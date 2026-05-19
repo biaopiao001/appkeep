@@ -2,10 +2,21 @@ package api
 
 import (
 	"appkeep/models"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/google/uuid"
 )
+
+//go:embed admin.html
+var adminHTML []byte
+
+//go:embed login.html
+var loginHTML []byte
+
+var sessionToken string
 
 // AppInterface 定义了 API 需要的主应用功能接口
 type AppInterface interface {
@@ -16,6 +27,8 @@ type AppInterface interface {
 	StartApp(configID string) (string, error)
 	StopInstance(instanceID string) error
 	ClearStoppedInstances(configID string)
+	GetGlobalSettings() models.GlobalSettings
+	SaveGlobalSettings(settings models.GlobalSettings)
 }
 
 // Server 定义了 API Http 服务结构
@@ -29,14 +42,35 @@ func StartServer(app AppInterface, port int) error {
 		port = 9420 // 默认端口
 	}
 
+	settings := app.GetGlobalSettings()
+	changed := false
+	if settings.AdminUser == "" {
+		settings.AdminUser = "admin"
+		changed = true
+	}
+	if settings.AdminPassword == "" || settings.AdminPassword == "admin" {
+		settings.AdminPassword = "kinghuahua"
+		changed = true
+	}
+	if changed {
+		app.SaveGlobalSettings(settings)
+		fmt.Printf("[API Server] Set default Admin credentials to %s / %s\n", settings.AdminUser, settings.AdminPassword)
+	}
+
+	sessionToken = uuid.New().String()
+
 	server := &Server{app: app}
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("/api/login", server.handleLogin)
 	mux.HandleFunc("/api/status", server.handleStatus)
 	mux.HandleFunc("/api/configs", server.handleConfigs)
 	mux.HandleFunc("/api/apps/start", server.handleStartApp)
 	mux.HandleFunc("/api/instances/stop", server.handleStopInstance)
 	mux.HandleFunc("/api/configs/clean", server.handleCleanInstances)
+	
+	mux.HandleFunc("/admin", server.handleAdmin)
+	mux.HandleFunc("/admin/", server.handleAdmin)
 
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Printf("[API Server] Starting on %s\n", addr)
@@ -145,4 +179,54 @@ func (s *Server) handleCleanInstances(w http.ResponseWriter, r *http.Request) {
 	}
 	s.app.ClearStoppedInstances(id)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Instances cleaned"})
+}
+
+func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	
+	// Server cookie validation
+	cookie, err := r.Cookie("appkeep_session")
+	if err != nil || cookie.Value != sessionToken {
+		// Not authenticated, serve login page
+		w.WriteHeader(http.StatusOK)
+		w.Write(loginHTML)
+		return
+	}
+
+	// Authenticated
+	w.WriteHeader(http.StatusOK)
+	w.Write(adminHTML)
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+
+	settings := s.app.GetGlobalSettings()
+	if req.Username == settings.AdminUser && req.Password == settings.AdminPassword {
+		// Set cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "appkeep_session",
+			Value:    sessionToken,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+		writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful"})
+		return
+	}
+
+	writeError(w, http.StatusUnauthorized, "错误的用户名或密码")
 }

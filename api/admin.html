@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AppKeep - 管理终端</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+            --warning-color: #f59e0b;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+        }
+
+        header {
+            padding: 2rem;
+            text-align: center;
+            border-bottom: 1px solid var(--card-border);
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: 600;
+            background: linear-gradient(to right, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .btn {
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn.danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger-color);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .btn.danger:hover {
+            background: var(--danger-color);
+            color: white;
+        }
+        
+        .btn.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success-color);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .btn.success:hover {
+            background: var(--success-color);
+            color: white;
+        }
+
+        .btn.outline {
+            background: transparent;
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+        }
+
+        .btn.outline:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: capitalize;
+        }
+
+        .status-running {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success-color);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-stopped {
+            background: rgba(148, 163, 184, 0.2);
+            color: var(--text-secondary);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+        }
+
+        .status-failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger-color);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .card-body {
+            flex-grow: 1;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: 1.5rem;
+            word-break: break-all;
+        }
+
+        .info-row {
+            margin-bottom: 0.5rem;
+            display: flex;
+        }
+
+        .info-label {
+            width: 80px;
+            flex-shrink: 0;
+            color: var(--text-secondary);
+        }
+
+        .info-value {
+            color: var(--text-primary);
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 0.75rem;
+            border-top: 1px solid var(--card-border);
+            padding-top: 1.25rem;
+        }
+        
+        .instances-section {
+            margin-top: 1rem;
+            border-top: 1px dashed var(--card-border);
+            padding-top: 1rem;
+        }
+        
+        .instance-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 0.5rem;
+            border-radius: 6px;
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-secondary);
+            background: var(--card-bg);
+            border: 1px dashed var(--card-border);
+            border-radius: 12px;
+        }
+
+        .link-url {
+            display: inline-block;
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            text-decoration: none;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .link-url:hover {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .loader {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 0.5rem;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .toast-container {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .toast {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(12px);
+            animation: slideIn 0.3s ease forwards;
+            opacity: 0;
+            transform: translateX(100%);
+        }
+
+        @keyframes slideIn {
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes fadeOut {
+            to { opacity: 0; transform: translateX(100%); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>AppKeep Admin</h1>
+    </header>
+
+    <div class="container">
+        <div class="toolbar">
+            <div>
+                <button class="btn success" onclick="startAllApps()">启动所有应用</button>
+            </div>
+            <div>
+                <button class="btn outline" onclick="fetchData()" id="refreshBtn">
+                    刷新状态
+                </button>
+            </div>
+        </div>
+
+        <div class="grid" id="appGrid">
+            <!-- Cards will be rendered here -->
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        const API_BASE = '/api';
+        
+        async function fetchData() {
+            const refreshBtn = document.getElementById('refreshBtn');
+            const originalText = refreshBtn.innerText;
+            refreshBtn.innerHTML = '<div class="loader"></div> 刷新中...';
+            refreshBtn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/status`);
+                if (!response.ok) throw new Error(`请求失败 (${response.status})`);
+                const result = await response.json();
+                renderApps(result.data || []);
+            } catch (error) {
+                showToast(`获取数据失败: ${error.message}`, 'error');
+            } finally {
+                refreshBtn.innerHTML = '刷新状态';
+                refreshBtn.disabled = false;
+            }
+        }
+
+        function renderApps(apps) {
+            const grid = document.getElementById('appGrid');
+            grid.innerHTML = '';
+
+            if (apps.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <h3>暂无挂载的应用</h3>
+                        <p>请在主程序添加并配置应用后在此处查看。</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // 按名称字典序排序，确保刷新时卡片位置不会跳跃
+            apps.sort((a, b) => {
+                const nameA = (a.config && a.config.name) ? a.config.name.toLowerCase() : '';
+                const nameB = (b.config && b.config.name) ? b.config.name.toLowerCase() : '';
+                return nameA.localeCompare(nameB);
+            });
+
+            const hostname = window.location.hostname;
+
+            apps.forEach(app => {
+                const config = app.config;
+                const instances = app.instances || [];
+                const status = app.status;
+                
+                const card = document.createElement('div');
+                card.className = 'card';
+                
+                let statusBadgeClass = 'status-stopped';
+                let statusText = '已停止';
+                if (status === 'running') {
+                    statusBadgeClass = 'status-running';
+                    statusText = '运行中';
+                } else if (status === 'failed') {
+                    statusBadgeClass = 'status-failed';
+                    statusText = '启动失败';
+                }
+                
+                // Quick URL creation
+                let urlLink = '';
+                if (config.port > 0) {
+                    const protocol = (config.port === 443 || config.port === 8443) ? 'https' : 'http';
+                    const url = `${protocol}://${hostname}:${config.port}`;
+                    urlLink = `<a href="${url}" target="_blank" class="link-url">访问服务 (${config.port})</a>`;
+                }
+
+                let instancesHtml = '';
+                if (instances.length > 0) {
+                    instancesHtml = `<div class="instances-section">`;
+                    instances.forEach(inst => {
+                        instancesHtml += `
+                            <div class="instance-item">
+                                <div>
+                                    <span style="color:var(--text-secondary)">PID:</span> ${inst.pid || '-'}
+                                    <span style="font-size:0.75rem;margin-left:8px;color:${inst.status==='running'?'var(--success-color)':'var(--danger-color)'}">${inst.status}</span>
+                                </div>
+                                ${inst.status === 'running' ? 
+                                    `<button class="btn outline" style="padding:0.25rem 0.5rem;font-size:0.75rem" onclick="stopInstance('${inst.instanceId}', event)">停止</button>` 
+                                    : ''}
+                            </div>
+                        `;
+                    });
+                    instancesHtml += `</div>`;
+                }
+
+                // If allowMulti is true, we might want multiple starts
+                const startBtnText = (status === 'running' && !config.allowMulti) ? '已运行' : '启动应用';
+                const isStartDisabled = (status === 'running' && !config.allowMulti);
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <h2 class="card-title">${escapeHtml(config.name)}</h2>
+                        <span class="status-badge ${statusBadgeClass}">${statusText}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-row">
+                            <div class="info-label">路径:</div>
+                            <div class="info-value" title="${escapeHtml(config.execPath)}">
+                                ${escapeHtml(truncatePath(config.execPath))}
+                            </div>
+                        </div>
+                        ${config.workDir ? `
+                        <div class="info-row">
+                            <div class="info-label">工作区:</div>
+                            <div class="info-value" title="${escapeHtml(config.workDir)}">
+                                ${escapeHtml(truncatePath(config.workDir))}
+                            </div>
+                        </div>` : ''}
+                        ${instancesHtml}
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn" onclick="startApp('${config.id}', event)" ${isStartDisabled ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>
+                            ${startBtnText}
+                        </button>
+                        ${status === 'stopped' || status === 'failed' ? 
+                           `<button class="btn outline" onclick="cleanInstances('${config.id}', event)">清理记录</button>` 
+                           : ``}
+                        <div style="flex-grow:1"></div>
+                        ${urlLink}
+                    </div>
+                `;
+                
+                grid.appendChild(card);
+            });
+        }
+
+        async function startApp(configId, event) {
+            const btn = event.currentTarget;
+            const originalText = btn.innerText;
+            btn.innerHTML = `<div class="loader"></div>`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/apps/start?id=${configId}`, { method: 'POST' });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.error || '运行失败');
+                showToast('启动命令已发送', 'success');
+                setTimeout(fetchData, 1000);
+            } catch (err) {
+                showToast(err.message, 'error');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function stopInstance(instanceId, event) {
+            const btn = event.currentTarget;
+            btn.innerHTML = `...`;
+            btn.disabled = true;
+
+            try {
+                const res = await fetch(`${API_BASE}/instances/stop?id=${instanceId}`, { method: 'POST' });
+                if (!res.ok) {
+                    const json = await res.json();
+                    throw new Error(json.error || '停止失败');
+                }
+                showToast('实例已停止', 'success');
+                setTimeout(fetchData, 1000);
+            } catch (err) {
+                showToast(err.message, 'error');
+                btn.innerText = '停止';
+                btn.disabled = false;
+            }
+        }
+
+        async function cleanInstances(configId, event) {
+            try {
+                const res = await fetch(`${API_BASE}/configs/clean?id=${configId}`, { method: 'POST' });
+                if (!res.ok) throw new Error('清理失败');
+                showToast('清理完成', 'success');
+                fetchData();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        async function startAllApps() {
+            // Optional premium feature - iterating and starting
+            showToast('开始启动所有可以启动的应用', 'success');
+            try {
+                const response = await fetch(`${API_BASE}/configs`);
+                const result = await response.json();
+                const configs = result.data || [];
+                for (const cfg of configs) {
+                    await fetch(`${API_BASE}/apps/start?id=${cfg.id}`, { method: 'POST' });
+                }
+                setTimeout(fetchData, 1500);
+            } catch(err) {
+                showToast('批量启动过程遇到异常', 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            if (type === 'error') {
+                toast.style.borderLeft = '4px solid var(--danger-color)';
+            } else if (type === 'success') {
+                toast.style.borderLeft = '4px solid var(--success-color)';
+            }
+            
+            toast.innerText = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        function truncatePath(path) {
+            if(!path) return '';
+            if (path.length <= 40) return path;
+            const parts = path.split(/[\\/]/);
+            if(parts.length < 3) return path.substring(0, 37) + '...';
+            return parts[0] + '/.../' + parts[parts.length - 1];
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData();
+            // Polling every 10 seconds
+            setInterval(fetchData, 10000);
+        });
+    </script>
+</body>
+</html>

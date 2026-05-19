@@ -27,8 +27,10 @@ type AppConfig struct {
 }
 
 type GlobalSettings struct {
-	Proxy   string `json:"proxy,omitempty"`   // 全局代理设置
-	ApiPort int    `json:"apiPort,omitempty"` // API 服务端口
+	Proxy         string `json:"proxy,omitempty"`    // 全局代理设置
+	ApiPort       int    `json:"apiPort,omitempty"`  // API 服务端口
+	AdminUser     string `json:"adminUser"`          // Admin 管理前端登录账户
+	AdminPassword string `json:"adminPassword"`      // Admin 管理前端登录密码
 }
 
 type ProcessInstance struct {
